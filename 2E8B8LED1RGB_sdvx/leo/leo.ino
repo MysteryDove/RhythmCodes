@@ -9,6 +9,7 @@
  * https://github.com/mon/Arduino-HID-Lighting
  */
 #include <Joystick.h>
+#include <Bounce2.h>
 Joystick_ Joystick(JOYSTICK_DEFAULT_REPORT_ID,JOYSTICK_TYPE_GAMEPAD, 8, 0,
  true, true, false, false, false, false, false, false, false, false, false);
 
@@ -40,13 +41,14 @@ unsigned long ReactiveTimeoutMax = 1000;  //number of cycles before HID falls ba
  *   hold    = false = reactive lighting 
  *   release = true  = HID lighting with reactive fallback
  */
-
 byte ButtonCount = sizeof(ButtonPins) / sizeof(ButtonPins[0]);
+const byte ButtonCount2 = sizeof(ButtonPins) / sizeof(ButtonPins[0]);
 byte SingleCount = sizeof(SinglePins) / sizeof(SinglePins[0]);
 byte EncPinCount = sizeof(EncPins) / sizeof(EncPins[0]);
 unsigned long ReactiveTimeoutCount = ReactiveTimeoutMax;
+Bounce buttons[ButtonCount2];
 
-int ReportDelay = 700;
+int ReportDelay = 580;
 unsigned long ReportRate ;
 
 void setup() {
@@ -56,8 +58,10 @@ void setup() {
   Joystick.setYAxisRange(-PULSE/2, PULSE/2-1);
   
   // setup I/O for pins
-  for(int i=0;i<ButtonCount;i++) {
-    pinMode(ButtonPins[i],INPUT_PULLUP);
+  for (int i = 0; i < ButtonCount; i++) {
+    buttons[i] = Bounce();
+    buttons[i].attach(ButtonPins[i], INPUT_PULLUP);
+    buttons[i].interval(5);
   }
   for(int i=0;i<SingleCount;i++) {
     pinMode(SinglePins[i],OUTPUT);
@@ -93,7 +97,7 @@ void setup() {
   for(int i=0;i<(sizeof(startup) / sizeof(startup[0]));i++){
     digitalWrite(SinglePins[startup[i]],HIGH);
     delay(80);
-    digitalWrite(SinglePins[startup[i]],LOW);
+    digitalWrite(SinglePins[startup[i]],LOW); 
   }
   for(int i=0;i<SingleCount ;i++){
     digitalWrite(SinglePins[i],HIGH);
@@ -108,8 +112,9 @@ void loop() {
   ReportRate = micros() ;
   
   // read buttons
-  for(int i=0;i<ButtonCount;i++) {
-    Joystick.setButton (i,!(digitalRead(ButtonPins[i])));
+  for (int i = 0; i < ButtonCount; i++) {
+    buttons[i].update();
+    Joystick.setButton(i, !(buttons[i].read()));
   }
 
   if(hidMode==false || (hidMode==true && ReactiveTimeoutCount>=ReactiveTimeoutMax)){

@@ -11,7 +11,6 @@
 #include "HIDLED.h"
 
 SinglePin extern SinglePins[];
-RGBPin extern RGBPins[];
 unsigned long extern ReactiveTimeoutCount;
 
 void led_stuff(SinglePin pins, byte brightness)
@@ -19,25 +18,11 @@ void led_stuff(SinglePin pins, byte brightness)
   analogWrite(pins.pin, brightness);
 }
 
-void rgb_stuff(RGBPin pins, byte r, byte g, byte b)
-{
-  analogWrite(pins.r, r);
-  analogWrite(pins.g, g);
-  analogWrite(pins.b, b);
-}
 
 void light_update(SingleLED* single_leds, RGBLed* rgb_leds) {
   for(int i = 0; i < NUMBER_OF_SINGLE; i++) {
     if(hidMode == true){
       led_stuff(SinglePins[i], single_leds[i].brightness);
-    }
-  }
-  for(int i = 0; i < NUMBER_OF_RGB; i++) {
-    if(rgbCommon == '+'){  //if direct drive common anode LEDs
-      rgb_stuff(RGBPins[i], map(rgb_leds[i].r, 0, 255, 255, 0), map(rgb_leds[i].g, 0, 255, 255, 0), map(rgb_leds[i].b, 0, 255, 255, 0));
-    }
-    if(rgbCommon == '-'){  //if direct drive common cathode LEDs
-      rgb_stuff(RGBPins[i], rgb_leds[i].r, rgb_leds[i].g, rgb_leds[i].b);
     }
   }
   ReactiveTimeoutCount = 0;
