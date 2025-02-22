@@ -3,3 +3,12 @@ This Arduino code requires:
 [ArduinoJoyStickLibrary](https://github.com/MHeironimus/ArduinoJoystickLibrary/): you need to download as zip and import into Arduino IDE.
 
 [Bounce2](https://github.com/thomasfredericks/Bounce2): you can directly download this library using arduino
+
+# What changed
+1. Button debounce implemented using Bounce2
+2. RGB LED support removed because personally do not using that
+3. ReportDelay changed to keep 1000hz report rate due to extra debounce cost
+
+# Extra Notes
+1. Change ReportDelay bigger to lower the report rate if you have weak cpu to save some performance
+2. Change PULSE accordingly with your encoder
