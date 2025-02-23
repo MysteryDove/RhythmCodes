@@ -34,6 +34,9 @@ unsigned long ReactiveTimeoutMax = 1000;
  *  Light mode detection by read first button while connecting usb 
  *   hold    = false = reactive lighting 
  *   release = true  = HID lighting with reactive fallback
+ *  Keyboard mode dection by read second button while connecting usb 
+ *   hold    = false = keyboard mode
+ *   release = true  = gamepad mode
  */
 const byte ButtonCount = sizeof(ButtonPins) / sizeof(ButtonPins[0]);
 const byte SingleCount = sizeof(SinglePins) / sizeof(SinglePins[0]);
@@ -60,7 +63,7 @@ void setup() {
   }
   delay(1000);
   // If not holding BT-A when plugged, go to controller mode, otherwise will go to keyboard mode
-  if (digitalRead(ButtonPins[1]) == LOW) {
+  if (digitalRead(ButtonPins[1]) == HIGH) {
     Joystick.begin(false);
     Joystick.setXAxisRange(-PULSE / 2, PULSE / 2 - 1);
     Joystick.setYAxisRange(-PULSE / 2, PULSE / 2 - 1);

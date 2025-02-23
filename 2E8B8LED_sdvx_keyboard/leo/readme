@@ -7,8 +7,6 @@ This Arduino code requires:
 # What changed
 1. Button debounce implemented using Bounce2
 2. RGB LED support removed because personally do not using that
-3. ReportDelay changed to keep 1000hz report rate due to extra debounce cost
-
-# Extra Notes
-1. Change ReportDelay bigger to lower the report rate if you have weak cpu to save some performance
-2. Change PULSE accordingly with your encoder
+3. Using dynamic report delay to mitigate unstable report rate caused by the encoder interrupts
+4. Adding keyboard mode so you can play djmax respect 4key, osu mania 4k/6k and even league of legends!
+5. Added keyboard start light effect when starting in keyboard mode
