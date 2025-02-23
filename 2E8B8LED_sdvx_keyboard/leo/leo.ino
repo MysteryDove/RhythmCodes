@@ -34,9 +34,6 @@ unsigned long ReactiveTimeoutMax = 1000;
  *  Light mode detection by read first button while connecting usb 
  *   hold    = false = reactive lighting 
  *   release = true  = HID lighting with reactive fallback
- *  Keyboard mode dection by read second button while connecting usb 
- *   hold    = false = keyboard mode
- *   release = true  = gamepad mode
  */
 const byte ButtonCount = sizeof(ButtonPins) / sizeof(ButtonPins[0]);
 const byte SingleCount = sizeof(SinglePins) / sizeof(SinglePins[0]);
@@ -75,6 +72,7 @@ void setup() {
     Keyboard.begin();
   }
   // light mode detection
+  hidMode = digitalRead(ButtonPins[0]);
   while (digitalRead(ButtonPins[0]) == LOW) {
     if ((millis() % 1000) < 500) {
       for (int i = 0; i < SingleCount; i++) {
