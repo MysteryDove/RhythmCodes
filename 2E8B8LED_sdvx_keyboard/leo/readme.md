@@ -1,8 +1,9 @@
 # Lib Requirement
 This Arduino code requires:
+
 [ArduinoJoyStickLibrary](https://github.com/MHeironimus/ArduinoJoystickLibrary/): you need to download as zip and import into Arduino IDE.
 
-[Bounce2](https://github.com/thomasfredericks/Bounce2): you can directly download this library using arduino
+[Bounce2](https://github.com/thomasfredericks/Bounce2): you can directly download this library from Arduino IDE
 
 # What changed
 1. Button debounce implemented using Bounce2
