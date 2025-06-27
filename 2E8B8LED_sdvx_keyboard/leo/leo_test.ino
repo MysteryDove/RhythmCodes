@@ -143,8 +143,10 @@ void loop() {
     encR %= PULSE;
     if (encR < -PULSE / 2) encR += PULSE;
     if (encR > PULSE / 2 - 1) encR -= PULSE;
-    Joystick.setXAxis(encL);
-    Joystick.setYAxis(encR);
+    int reportEncL = (abs(encL) < MIN_THRESHOLD) ? 0 : encL;
+    int reportEncR = (abs(encR) < MIN_THRESHOLD) ? 0 : encR;
+    Joystick.setXAxis(reportEncL);
+    Joystick.setYAxis(reportEncR);
     //report
     Joystick.sendState();
   } else {
