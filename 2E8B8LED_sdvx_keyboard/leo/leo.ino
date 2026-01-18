@@ -9,6 +9,7 @@
  * https://github.com/mon/Arduino-HID-Lighting
  */
 #include <Keyboard.h>
+#include <Mouse.h>
 #include <Joystick.h>
 #include <Bounce2.h>
 Joystick_ Joystick(JOYSTICK_DEFAULT_REPORT_ID, JOYSTICK_TYPE_GAMEPAD, 8, 0,
@@ -42,7 +43,37 @@ unsigned long ReactiveTimeoutCount = ReactiveTimeoutMax;
 Bounce buttons[ButtonCount];
 bool controllerMode = true;
 
+enum EncoderOutputMode {
+  ENCODER_MODE_KEYS = 0,
+  ENCODER_MODE_WHEEL = 1
+};
+
+// Per-encoder output configuration (keyboard mode).
+// 0 = left encoder, 1 = right encoder
+EncoderOutputMode encoderOutput[2] = {
+  ENCODER_MODE_KEYS,
+  ENCODER_MODE_WHEEL
+};
+
+// Encoder keybinds (keyboard mode). Customize if needed.
+// Indexing: [encoder][direction], direction: 0 = CCW, 1 = CW
+const uint8_t EncoderKeybinds[2][2] = {
+  { KEY_UP_ARROW, KEY_DOWN_ARROW },  // Left encoder
+  { KEY_UP_ARROW, KEY_DOWN_ARROW }   // Right encoder
+};
+
+const int8_t EncoderWheelStep = 1;  // Wheel ticks per detent
+// Encoder slowdown/deadzone for keyboard mode.
+// Every N encoder moves (detents) will emit 1 output step.
+// 1 = no slowdown; higher values = more deadzone + lower rate.
+const uint8_t EncoderStepDiv[2] = { 20, 20 };
+// Enable/disable encoder input in keyboard mode (performance).
+// false = disable encoder processing in keyboard mode.
+bool EnableEncoderInKeyboardMode = false;
+
 unsigned long ReportRate;
+void handleEncodersKeyboardMode();
+void tapKey(uint8_t key);
 void setup() {
   Serial.begin(9600);
   // setup I/O for pins
@@ -69,8 +100,20 @@ void setup() {
   } else {
     controllerMode = false;
     Serial.println("KB mode active!");
+    Serial.println(digitalRead(ButtonPins[2]));
+    if(digitalRead(ButtonPins[2]) == HIGH){
+      Serial.println("Encoder in KB mode enabled!");
+      EnableEncoderInKeyboardMode = true;
+      attachInterrupt(digitalPinToInterrupt(EncPins[0]), doEncoder0, CHANGE);
+      attachInterrupt(digitalPinToInterrupt(EncPins[2]), doEncoder1, CHANGE);
+    } else {
+      Serial.println("Encoder in KB mode disabled!");
+    }
     Keyboard.begin();
+    Mouse.begin();
   }
+  // Encoder interrupts active in both modes
+
   // light mode detection
   hidMode = digitalRead(ButtonPins[0]);
   while (digitalRead(ButtonPins[0]) == LOW) {
@@ -150,10 +193,17 @@ void loop() {
     for (int i = 0; i < ButtonCount; i++) {
       buttons[i].update();
       if (buttons[i].fell()) {  // Button was just pressed
-        Keyboard.press(keyMapping[i]);
+        if (keyMapping[i] != 0) {
+          Keyboard.press(keyMapping[i]);
+        }
       } else if (buttons[i].rose()) {  // Button was just released
-        Keyboard.release(keyMapping[i]);
+        if (keyMapping[i] != 0) {
+          Keyboard.release(keyMapping[i]);
+        }
       }
+    }
+    if (EnableEncoderInKeyboardMode) {
+      handleEncodersKeyboardMode();
     }
   }
   if (!hidMode || ReactiveTimeoutCount >= ReactiveTimeoutMax) {
@@ -169,8 +219,66 @@ void loop() {
     delayMicroseconds(1000 - loopTime);
   }
   //ReportRate Display
-  // Serial.print(micros() - loopStartTime);
-  // Serial.println(" micro sec per loop");
+  //Serial.print(micros() - loopStartTime);
+  //Serial.println(" micro sec per loop");
+}
+
+inline void emitEncoderStep(uint8_t index, bool cw) {
+  if (encoderOutput[index] == ENCODER_MODE_WHEEL) {
+    Mouse.move(0, 0, cw ? -EncoderWheelStep : EncoderWheelStep);
+  } else {
+    tapKey(EncoderKeybinds[index][cw ? 1 : 0]);
+  }
+}
+
+void handleEncodersKeyboardMode() {
+  static int lastEncL = 0;
+  static int lastEncR = 0;
+  static int accumL = 0;
+  static int accumR = 0;
+
+  int currentEncL = encL;
+  int currentEncR = encR;
+
+  int deltaL = currentEncL - lastEncL;
+  int deltaR = currentEncR - lastEncR;
+
+  if (deltaL != 0) {
+    accumL += deltaL;
+    uint8_t threshold = EncoderStepDiv[0] == 0 ? 1 : EncoderStepDiv[0];
+    while (accumL >= threshold) {
+      emitEncoderStep(0, true);
+      accumL -= threshold;
+    }
+    while (accumL <= -threshold) {
+      emitEncoderStep(0, false);
+      accumL += threshold;
+    }
+  }
+
+  if (deltaR != 0) {
+    accumR += deltaR;
+    uint8_t threshold = EncoderStepDiv[1] == 0 ? 1 : EncoderStepDiv[1];
+    while (accumR >= threshold) {
+      emitEncoderStep(1, true);
+      accumR -= threshold;
+    }
+    while (accumR <= -threshold) {
+      emitEncoderStep(1, false);
+      accumR += threshold;
+    }
+  }
+
+  lastEncL = currentEncL;
+  lastEncR = currentEncR;
+}
+
+void tapKey(uint8_t key) {
+  if (key == 0) {
+    return;
+  }
+  Keyboard.press(key);
+  Keyboard.release(key);
 }
 //Interrupts
 void doEncoder0() {
