@@ -10,21 +10,17 @@
 */
 #include "HIDLED.h"
 
-SinglePin extern SinglePins[];
-unsigned long extern ReactiveTimeoutCount;
+byte extern SinglePins[];
+volatile unsigned long extern ReactiveTimeoutCount;
 
-void led_stuff(SinglePin pins, byte brightness)
-{
-  analogWrite(pins.pin, brightness);
-}
-
+volatile bool ledUpdatePending = false;
+uint8_t ledPendingBrightness[NUMBER_OF_SINGLE] = {0};
 
 void light_update(SingleLED* single_leds, RGBLed* rgb_leds) {
   for(int i = 0; i < NUMBER_OF_SINGLE; i++) {
-    if(hidMode == true){
-      led_stuff(SinglePins[i], single_leds[i].brightness);
-    }
+    ledPendingBrightness[i] = single_leds[i].brightness;
   }
+  ledUpdatePending = true;
   ReactiveTimeoutCount = 0;
 }
 

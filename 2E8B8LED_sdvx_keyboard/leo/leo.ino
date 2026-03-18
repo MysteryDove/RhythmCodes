@@ -3,8 +3,8 @@
  * release page
  * http://knuckleslee.blogspot.com/2018/06/RhythmCodes.html
  * 
- * Arduino Joystick Library
- * https://github.com/MHeironimus/ArduinoJoystickLibrary/
+ * Arduino Joystick Library (forked)
+ * https://github.com/MysteryDove/ArduinoJoystickLibrary/
  * mon's Arduino-HID-Lighting
  * https://github.com/mon/Arduino-HID-Lighting
  */
@@ -13,6 +13,7 @@
 #include <Joystick.h>
 #include <Bounce2.h>
 #include <util/atomic.h>
+#include "HIDLED.h"
 Joystick_ Joystick(JOYSTICK_DEFAULT_REPORT_ID, JOYSTICK_TYPE_GAMEPAD, 8, 0,
                    true, true, false, false, false, false, false, false, false, false, false);
 
@@ -24,7 +25,7 @@ byte EncPins[] = { 0, 1, 2, 3 };
 // button sorting = {Start,BT-A,-B,-C,-D,FX-L,-R,Extra}
 byte SinglePins[] = { 4, 6, 12, 18, 20, 22, 14, 16 };
 byte ButtonPins[] = { 5, 7, 13, 19, 21, 23, 15, 17 };
-unsigned long ReactiveTimeoutMax = 1000;
+volatile unsigned long ReactiveTimeoutMax = 1000;
 /* pin assignments
  * VOL-L Green to pin 0 and White to pin 1
  * VOL-R Green to pin 2 and White to pin 3
@@ -41,7 +42,7 @@ unsigned long ReactiveTimeoutMax = 1000;
 const byte ButtonCount = sizeof(ButtonPins) / sizeof(ButtonPins[0]);
 const byte SingleCount = sizeof(SinglePins) / sizeof(SinglePins[0]);
 const byte EncPinCount = sizeof(EncPins) / sizeof(EncPins[0]);
-unsigned long ReactiveTimeoutCount = ReactiveTimeoutMax;
+volatile unsigned long ReactiveTimeoutCount = ReactiveTimeoutMax;
 Bounce buttons[ButtonCount];
 bool controllerMode = true;
 
@@ -76,6 +77,19 @@ bool EnableEncoderInKeyboardMode = false;
 unsigned long ReportRate;
 void handleEncodersKeyboardMode();
 void tapKey(uint8_t key);
+void flushPendingRelease();
+
+static uint8_t pendingKeyRelease = 0;
+static unsigned long pendingKeyPressTime = 0;
+const unsigned long KEY_RELEASE_DELAY_US = 1500;  // 1.5 ms — guarantees separate USB poll frame
+
+// Debug counters for report rate monitoring
+unsigned long reportsSent = 0;
+unsigned long reportsSkipped = 0;
+unsigned long loopCount = 0;
+unsigned long worstLoopTime = 0;
+unsigned long lastReportTime = 0;
+unsigned long overBudgetCount = 0;
 
 static inline uint8_t fastRead(uint8_t pin) {
   uint8_t port = digitalPinToPort(pin);
@@ -100,13 +114,13 @@ static inline int16_t normalizeEncoder(int32_t value) {
   return (int16_t)value;
 }
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   // setup I/O for pins
   hidMode = digitalRead(ButtonPins[0]);
   for (int i = 0; i < ButtonCount; i++) {
     buttons[i] = Bounce();
     buttons[i].attach(ButtonPins[i], INPUT_PULLUP);
-    buttons[i].interval(5);
+    buttons[i].interval(2);
   }
   for (int i = 0; i < SingleCount; i++) {
     pinMode(SinglePins[i], OUTPUT);
@@ -194,7 +208,6 @@ void setup() {
 void loop() {
   unsigned long loopStartTime = micros();  // Record the start time
   if (controllerMode) {
-    bool changed = false;
     static int16_t lastSentX = 0;
     static int16_t lastSentY = 0;
 
@@ -202,7 +215,6 @@ void loop() {
       buttons[i].update();
       if (buttons[i].fell() || buttons[i].rose()) {  // Button was just pressed
         Joystick.setButton(i, !(buttons[i].read()));
-        changed = true;
       }
     }
 
@@ -213,11 +225,14 @@ void loop() {
       Joystick.setYAxis(y);
       lastSentX = x;
       lastSentY = y;
-      changed = true;
     }
 
-    if (changed) {
+    // Constant-rate send: always send if endpoint is ready (non-blocking)
+    if (Joystick.isReady()) {
       Joystick.sendState();
+      reportsSent++;
+    } else {
+      reportsSkipped++;
     }
   } else {
     // keyboard mode
@@ -237,22 +252,59 @@ void loop() {
     if (EnableEncoderInKeyboardMode) {
       handleEncodersKeyboardMode();
     }
+    flushPendingRelease();
   }
-  if (!hidMode || ReactiveTimeoutCount >= ReactiveTimeoutMax) {
+  unsigned long currentTimeout;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    currentTimeout = ReactiveTimeoutCount;
+  }
+  // F7: flush deferred HID LED writes from USB ISR
+  if (hidMode && ledUpdatePending) {
+    for (int i = 0; i < SingleCount; i++) {
+      analogWrite(SinglePins[i], ledPendingBrightness[i]);
+    }
+    ledUpdatePending = false;
+  }
+  if (!hidMode || currentTimeout >= ReactiveTimeoutMax) {
     for (int i = 0; i < ButtonCount; i++) {
       digitalWrite(SinglePins[i], !(digitalRead(ButtonPins[i])));
     }
   } else if (hidMode) {
-    ReactiveTimeoutCount++;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      ReactiveTimeoutCount++;
+    }
   }
 
   unsigned long loopTime = micros() - loopStartTime;
+  // Track actual work time (before delay/serial overhead)
+  if (loopTime > worstLoopTime) {
+    worstLoopTime = loopTime;
+  }
+  if (loopTime > 1000) {
+    overBudgetCount++;
+  }
   if (loopTime < 1000) {
     delayMicroseconds(1000 - loopTime);
   }
-  //ReportRate Display
-  //Serial.print(micros() - loopStartTime);
-  //Serial.println(" micro sec per loop");
+  //ReportRate Display — prints every 1 second
+  loopCount++;
+  if (micros() - lastReportTime >= 1000000UL) {
+    Serial.print(reportsSent);
+    Serial.print('/');
+    Serial.print(loopCount);
+    Serial.print(" sk:");
+    Serial.print(reportsSkipped);
+    Serial.print(" w:");
+    Serial.print(worstLoopTime);
+    Serial.print(" over:");
+    Serial.println(overBudgetCount);
+    reportsSent = 0;
+    reportsSkipped = 0;
+    loopCount = 0;
+    worstLoopTime = 0;
+    overBudgetCount = 0;
+    lastReportTime = micros();
+  }
 }
 
 inline void emitEncoderStep(uint8_t index, bool cw) {
@@ -275,29 +327,39 @@ void handleEncodersKeyboardMode() {
   int deltaL = currentEncL - lastEncL;
   int deltaR = currentEncR - lastEncR;
 
+  const int MAX_STEPS_PER_LOOP = 3;
+
   if (deltaL != 0) {
     accumL += deltaL;
     uint8_t threshold = EncoderStepDiv[0] == 0 ? 1 : EncoderStepDiv[0];
-    while (accumL >= threshold) {
+    int stepsL = 0;
+    while (accumL >= threshold && stepsL < MAX_STEPS_PER_LOOP) {
       emitEncoderStep(0, true);
       accumL -= threshold;
+      stepsL++;
     }
-    while (accumL <= -threshold) {
+    stepsL = 0;
+    while (accumL <= -threshold && stepsL < MAX_STEPS_PER_LOOP) {
       emitEncoderStep(0, false);
       accumL += threshold;
+      stepsL++;
     }
   }
 
   if (deltaR != 0) {
     accumR += deltaR;
     uint8_t threshold = EncoderStepDiv[1] == 0 ? 1 : EncoderStepDiv[1];
-    while (accumR >= threshold) {
+    int stepsR = 0;
+    while (accumR >= threshold && stepsR < MAX_STEPS_PER_LOOP) {
       emitEncoderStep(1, true);
       accumR -= threshold;
+      stepsR++;
     }
-    while (accumR <= -threshold) {
+    stepsR = 0;
+    while (accumR <= -threshold && stepsR < MAX_STEPS_PER_LOOP) {
       emitEncoderStep(1, false);
       accumR += threshold;
+      stepsR++;
     }
   }
 
@@ -309,8 +371,20 @@ void tapKey(uint8_t key) {
   if (key == 0) {
     return;
   }
+  // Release any pending key before pressing a new one
+  if (pendingKeyRelease != 0) {
+    Keyboard.release(pendingKeyRelease);
+  }
   Keyboard.press(key);
-  Keyboard.release(key);
+  pendingKeyRelease = key;
+  pendingKeyPressTime = micros();
+}
+
+void flushPendingRelease() {
+  if (pendingKeyRelease != 0 && (micros() - pendingKeyPressTime) >= KEY_RELEASE_DELAY_US) {
+    Keyboard.release(pendingKeyRelease);
+    pendingKeyRelease = 0;
+  }
 }
 //Interrupts
 void doEncoder0() {

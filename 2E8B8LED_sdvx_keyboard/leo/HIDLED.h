@@ -16,6 +16,9 @@
 extern boolean hidMode;
 extern char rgbCommon;
 
+extern volatile bool ledUpdatePending;
+extern uint8_t ledPendingBrightness[NUMBER_OF_SINGLE];
+
 typedef struct {
   byte brightness;
 } SingleLED;

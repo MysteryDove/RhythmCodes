@@ -12,9 +12,13 @@ This folder is the renamed successor to the older `2E8B8LED1RGB_sdvx/leo` varian
 4. Keyboard mode can optionally keep the encoders active.
 5. Keyboard mode now supports encoder output as keys or mouse wheel input.
 6. Encoder handling was reworked with atomic reads, faster pin reads in interrupts, and normalized axis output.
-7. Joystick reports are now only sent when buttons or encoder values actually change.
+7. Joystick reports are now sent at a constant rate using a non-blocking endpoint ready check (`isReady()`), instead of only on change.
 8. Keyboard mode has its own startup light pattern so you can tell which mode was entered.
 9. HID light mode boot detection was fixed so `hidMode` is sampled correctly after mode selection.
+10. HID LED output reports are now deferred from the USB ISR to the main loop, reducing interrupt latency under encoder load.
+11. `ReactiveTimeoutCount` is now `volatile` with atomic access to prevent torn reads across ISR/loop.
+12. Keyboard encoder tap keys use deferred release to prevent dropped key events at high call rates.
+13. Keyboard encoder while-loops are capped per iteration to prevent unbounded loop time.
 
 # How To Use
 
@@ -51,14 +55,14 @@ Default keyboard mode mapping:
 
 This sketch needs these Arduino libraries:
 
-1. [ArduinoJoystickLibrary](https://github.com/MHeironimus/ArduinoJoystickLibrary/)
+1. [ArduinoJoystickLibrary (forked)](https://github.com/MysteryDove/ArduinoJoystickLibrary/) — adds `isReady()` for non-blocking USB send
 2. [Bounce2](https://github.com/thomasfredericks/Bounce2)
 
 # How To Install And Import The Libraries
 
 ## ArduinoJoystickLibrary
 
-1. Open the GitHub page: [ArduinoJoystickLibrary](https://github.com/MHeironimus/ArduinoJoystickLibrary/)
+1. Open the GitHub page: [ArduinoJoystickLibrary (forked)](https://github.com/MysteryDove/ArduinoJoystickLibrary/)
 2. Click `Code` -> `Download ZIP`.
 3. In Arduino IDE, open `Sketch` -> `Include Library` -> `Add .ZIP Library...`
 4. Select the downloaded ZIP file and import it.
