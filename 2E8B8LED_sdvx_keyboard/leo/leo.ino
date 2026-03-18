@@ -25,6 +25,13 @@ byte EncPins[] = { 0, 1, 2, 3 };
 // button sorting = {Start,BT-A,-B,-C,-D,FX-L,-R,Extra}
 byte SinglePins[] = { 4, 6, 12, 18, 20, 22, 14, 16 };
 byte ButtonPins[] = { 5, 7, 13, 19, 21, 23, 15, 17 };
+
+// User-configurable settings
+const bool EnableSerialMonitorDebug = false;
+const unsigned long SerialMonitorBaudRate = 115200;
+const unsigned long SerialReportIntervalUs = 1000000UL;
+const uint8_t ButtonDebounceMs = 2;
+
 volatile unsigned long ReactiveTimeoutMax = 1000;
 /* pin assignments
  * VOL-L Green to pin 0 and White to pin 1
@@ -114,13 +121,15 @@ static inline int16_t normalizeEncoder(int32_t value) {
   return (int16_t)value;
 }
 void setup() {
-  Serial.begin(115200);
+  if (EnableSerialMonitorDebug) {
+    Serial.begin(SerialMonitorBaudRate);
+  }
   // setup I/O for pins
   hidMode = digitalRead(ButtonPins[0]);
   for (int i = 0; i < ButtonCount; i++) {
     buttons[i] = Bounce();
     buttons[i].attach(ButtonPins[i], INPUT_PULLUP);
-    buttons[i].interval(2);
+    buttons[i].interval(ButtonDebounceMs);
   }
   for (int i = 0; i < SingleCount; i++) {
     pinMode(SinglePins[i], OUTPUT);
@@ -138,15 +147,21 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(EncPins[2]), doEncoder1, CHANGE);
   } else {
     controllerMode = false;
-    Serial.println("KB mode active!");
-    Serial.println(digitalRead(ButtonPins[2]));
-    if(digitalRead(ButtonPins[2]) == HIGH){
-      Serial.println("Encoder in KB mode enabled!");
+    if (EnableSerialMonitorDebug) {
+      Serial.println("KB mode active!");
+      Serial.println(digitalRead(ButtonPins[2]));
+    }
+    if (digitalRead(ButtonPins[2]) == HIGH) {
+      if (EnableSerialMonitorDebug) {
+        Serial.println("Encoder in KB mode enabled!");
+      }
       EnableEncoderInKeyboardMode = true;
       attachInterrupt(digitalPinToInterrupt(EncPins[0]), doEncoder0, CHANGE);
       attachInterrupt(digitalPinToInterrupt(EncPins[2]), doEncoder1, CHANGE);
     } else {
-      Serial.println("Encoder in KB mode disabled!");
+      if (EnableSerialMonitorDebug) {
+        Serial.println("Encoder in KB mode disabled!");
+      }
     }
     Keyboard.begin();
     Mouse.begin();
@@ -230,8 +245,10 @@ void loop() {
     // Constant-rate send: always send if endpoint is ready (non-blocking)
     if (Joystick.isReady()) {
       Joystick.sendState();
-      reportsSent++;
-    } else {
+      if (EnableSerialMonitorDebug) {
+        reportsSent++;
+      }
+    } else if (EnableSerialMonitorDebug) {
       reportsSkipped++;
     }
   } else {
@@ -276,34 +293,37 @@ void loop() {
   }
 
   unsigned long loopTime = micros() - loopStartTime;
-  // Track actual work time (before delay/serial overhead)
-  if (loopTime > worstLoopTime) {
-    worstLoopTime = loopTime;
-  }
-  if (loopTime > 1000) {
-    overBudgetCount++;
+  if (EnableSerialMonitorDebug) {
+    // Track actual work time before delay and serial overhead.
+    if (loopTime > worstLoopTime) {
+      worstLoopTime = loopTime;
+    }
+    if (loopTime > 1000) {
+      overBudgetCount++;
+    }
   }
   if (loopTime < 1000) {
     delayMicroseconds(1000 - loopTime);
   }
-  //ReportRate Display — prints every 1 second
-  loopCount++;
-  if (micros() - lastReportTime >= 1000000UL) {
-    Serial.print(reportsSent);
-    Serial.print('/');
-    Serial.print(loopCount);
-    Serial.print(" sk:");
-    Serial.print(reportsSkipped);
-    Serial.print(" w:");
-    Serial.print(worstLoopTime);
-    Serial.print(" over:");
-    Serial.println(overBudgetCount);
-    reportsSent = 0;
-    reportsSkipped = 0;
-    loopCount = 0;
-    worstLoopTime = 0;
-    overBudgetCount = 0;
-    lastReportTime = micros();
+  if (EnableSerialMonitorDebug) {
+    loopCount++;
+    if (micros() - lastReportTime >= SerialReportIntervalUs) {
+      Serial.print(reportsSent);
+      Serial.print('/');
+      Serial.print(loopCount);
+      Serial.print(" sk:");
+      Serial.print(reportsSkipped);
+      Serial.print(" w:");
+      Serial.print(worstLoopTime);
+      Serial.print(" over:");
+      Serial.println(overBudgetCount);
+      reportsSent = 0;
+      reportsSkipped = 0;
+      loopCount = 0;
+      worstLoopTime = 0;
+      overBudgetCount = 0;
+      lastReportTime = micros();
+    }
   }
 }
 
